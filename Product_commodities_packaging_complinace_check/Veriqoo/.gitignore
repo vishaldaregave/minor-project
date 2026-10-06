@@ -1,0 +1,101 @@
+# ==============================================================================
+# Veriqoo — Git Ignore Policy
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Environment & Secrets (NEVER COMMIT)
+# ------------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+
+# ------------------------------------------------------------------------------
+# Python & Virtual Environments
+# ------------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+.venv*/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Testing & Linting Caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage/
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
+
+# ------------------------------------------------------------------------------
+# Flutter & Dart
+# ------------------------------------------------------------------------------
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+app.*.symbols
+app.*.map.json
+
+# Flutter Android build artifacts
+/android/app/debug
+/android/app/profile
+/android/app/release
+android/.gradle/
+android/local.properties
+
+# Flutter iOS / macOS ephemeral
+**/ios/Flutter/.last_build_id
+ios/Flutter/Generated.xcconfig
+ios/Flutter/app.framework
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/ephemeral/
+macos/Flutter/ephemeral/
+linux/flutter/ephemeral/
+
+# ------------------------------------------------------------------------------
+# IDE & Editor Metadata
+# ------------------------------------------------------------------------------
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+*.swp
+*.swo
+*~
+
+# ------------------------------------------------------------------------------
+# Operating System
+# ------------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ------------------------------------------------------------------------------
+# Build Logs & Temporary Files
+# ------------------------------------------------------------------------------
+*.log
+.buildlog/
+.history/
+migrate_working_dir/
