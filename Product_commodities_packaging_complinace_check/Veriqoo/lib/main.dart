@@ -8,6 +8,7 @@ import 'screens/dashboard/authority_cases_screen.dart';
 import 'screens/dashboard/dashboard_screen.dart';
 import 'screens/dashboard/inspections_screen.dart';
 import 'screens/dashboard/products_screen.dart';
+import 'screens/food_safety/food_safety_screen.dart';
 import 'screens/dashboard/report_violation_dialog.dart';
 import 'services/compliance_analysis.dart';
 import 'services/consumer_issue_api_service.dart';
@@ -48,6 +49,7 @@ class LegalCheckApp extends StatelessWidget {
         '/authority/cases': (_) => const AuthorityCasesScreen(),
         '/inspections': (_) => const InspectionsScreen(),
         '/products': (_) => const ProductsScreen(),
+        '/food-safety': (_) => const FoodSafetyScreen(),
       },
       theme: ThemeData(
         useMaterial3: true,
@@ -285,6 +287,100 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                         ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // LABELLENS FOOD SAFETY CARD
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0D251F),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFF00C896).withValues(alpha: 0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        height: 42,
+                        width: 42,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF00C896).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.biotech_rounded,
+                          color: Color(0xFF00C896),
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'LabelLens Food Safety',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Text(
+                              'EFSA Database & Additive Analysis',
+                              style: TextStyle(
+                                color: Color(0xFF00C896),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Audit food label additives against 3,175+ EFSA substances, calculate child safety verdicts, and detect harmful E-numbers.',
+                    style: TextStyle(
+                      color: Color(0xFFD4E1DC),
+                      fontSize: 13,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 46,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pushNamed(context, '/food-safety');
+                      },
+                      icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                      label: const Text(
+                        'Open LabelLens',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF00C896),
+                        foregroundColor: const Color(0xFF0D251F),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
                     ),
                   ),

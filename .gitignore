@@ -1,0 +1,14 @@
+# Reference cloned repository
+LabelLens/
+
+# Python cache & logs
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+.pytest_cache/
+
+# OS files
+Thumbs.db
+[Dd]esktop.ini
+.DS_Store
