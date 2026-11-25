@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'supabase_service.dart';
+
 class LegalRulesRetrievalService {
   LegalRulesRetrievalService({
     String? apiKey,
@@ -15,12 +17,12 @@ class LegalRulesRetrievalService {
         _httpClient = httpClient ?? http.Client();
 
   static SupabaseClient? _resolveSupabaseClient() {
+    if (!SupabaseService.isReady) return null;
     try {
-      if (Supabase.instance.isInitialized) {
-        return Supabase.instance.client;
-      }
-    } catch (_) {}
-    return null;
+      return Supabase.instance.client;
+    } catch (_) {
+      return null;
+    }
   }
 
   static const model = 'gemini-embedding-001';
@@ -30,6 +32,10 @@ class LegalRulesRetrievalService {
   final SupabaseClient? _client;
   final http.Client _httpClient;
 
+  void dispose() {
+    _httpClient.close();
+  }
+
   Future<LegalRulesContext> retrieveLegalContext(String ocrText) async {
     final client = _client;
     if (client == null) {
@@ -38,272 +44,139 @@ class LegalRulesRetrievalService {
     }
     try {
       final query = _buildQuery(ocrText);
-      debugPrint('RAG: retrieval query generated (${query.length} characters)');
-      final embedding = await _generateQueryEmbedding(query);
-      final totalResponse = await client
-          .from('legal_rules')
-          .select('rule_number')
-          .not('embedding', 'is', null)
-          .count(CountOption.exact);
-      debugPrint('RAG: total embedded legal rules available = ${totalResponse.count}');
+      final embedding = await _generateEmbedding(query);
+      if (embedding.isEmpty) {
+        return const LegalRulesContext.empty();
+      }
+
       final response = await client.rpc(
         'match_legal_rules',
         params: {
           'query_embedding': embedding,
-          'match_count': 51,
+          'match_threshold': 0.6,
+          'match_count': 5,
         },
       );
-      final rules = List<Map<String, dynamic>>.from(response as List);
-      debugPrint('RAG: rules retrieved = ${rules.length}');
-      if (rules.isEmpty) return const LegalRulesContext.empty();
 
-      final candidates = rules.map(LegalRule.fromJson).toList();
-      final applicability = await _classifyApplicability(ocrText, candidates);
-      final applicable = <LegalRule>[];
-      final cannotDetermine = <LegalRule>[];
-      for (final decision in applicability) {
-        if (decision.status == RuleApplicability.applicable) {
-          applicable.add(decision.rule);
-        } else if (decision.status == RuleApplicability.cannotDetermine) {
-          cannotDetermine.add(decision.rule);
-        }
-      }
-      debugPrint('RAG: rules classified as applicable = ${applicable.length}');
-      debugPrint('RAG: rules classified as not applicable = ${candidates.length - applicable.length - cannotDetermine.length}');
-      debugPrint('RAG: rules classified as cannot determine = ${cannotDetermine.length}');
+      final rules = (response as List<dynamic>? ?? [])
+          .map((item) => LegalRuleItem.fromRpcMap(item as Map<String, dynamic>))
+          .toList();
 
-      return LegalRulesContext(
-        applicable: applicable,
-        cannotDetermine: cannotDetermine,
-      );
+      return LegalRulesContext(rules: rules);
     } catch (e) {
-      debugPrint('RAG: Error retrieving legal rules context: $e');
+      debugPrint('RAG retrieval failed: $e');
       return const LegalRulesContext.empty();
     }
   }
 
-  Future<List<_ApplicabilityDecision>> _classifyApplicability(
-    String ocrText,
-    List<LegalRule> rules,
-  ) async {
-    if (apiKey.trim().isEmpty) {
-      return rules
-          .map((r) => _ApplicabilityDecision(
-                rule: r,
-                status: RuleApplicability.cannotDetermine,
-              ))
-          .toList();
+  String _buildQuery(String ocrText) {
+    final trimmed = ocrText.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (trimmed.length > 500) {
+      return trimmed.substring(0, 500);
     }
+    return trimmed;
+  }
+
+  Future<List<double>> _generateEmbedding(String text) async {
+    if (apiKey.isEmpty) {
+      debugPrint('RAG: GEMINI_API_KEY missing, skipping embeddings.');
+      return const [];
+    }
+
+    final url = Uri.parse(
+      'https://generativelanguage.googleapis.com/v1beta/models/$model:embedContent?key=$apiKey',
+    );
+
+    final payload = {
+      'model': 'models/$model',
+      'content': {
+        'parts': [
+          {'text': text}
+        ]
+      },
+    };
+
     try {
       final response = await _httpClient.post(
-        Uri.https(
-          'generativelanguage.googleapis.com',
-          '/v1beta/models/gemini-1.5-flash:generateContent',
-          {'key': apiKey},
-        ),
-        headers: const {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'contents': [
-            {
-              'parts': [
-                {'text': _buildApplicabilityPrompt(ocrText, rules)},
-              ],
-            },
-          ],
-          'generationConfig': {
-            'temperature': 0.0,
-            'responseMimeType': 'application/json',
-          },
-        }),
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(payload),
       );
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        return rules
-            .map((r) => _ApplicabilityDecision(
-                  rule: r,
-                  status: RuleApplicability.cannotDetermine,
-                ))
-            .toList();
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        final values =
+            (decoded['embedding']?['values'] as List<dynamic>? ?? [])
+                .map((v) => (v as num).toDouble())
+                .toList();
+        if (values.length == vectorDimension) {
+          return values;
+        }
       }
-      final decoded = jsonDecode(response.body);
-      final text = decoded['candidates']?[0]?['content']?['parts']?[0]?['text'];
-      if (text is! String || text.trim().isEmpty) {
-        return rules
-            .map((r) => _ApplicabilityDecision(
-                  rule: r,
-                  status: RuleApplicability.cannotDetermine,
-                ))
-            .toList();
-      }
-      final decisions = jsonDecode(text)['decisions'];
-      if (decisions is! List) {
-        return rules
-            .map((r) => _ApplicabilityDecision(
-                  rule: r,
-                  status: RuleApplicability.cannotDetermine,
-                ))
-            .toList();
-      }
-      final byRule = {for (final rule in rules) rule.ruleNumber: rule};
-      final classified = decisions.map((item) {
-        final map = Map<String, dynamic>.from(item as Map);
-        final rule = byRule[map['rule_number']?.toString()];
-        if (rule == null) return null;
-        return _ApplicabilityDecision(
-          rule: rule,
-          status: RuleApplicability.fromValue(map['status']?.toString()),
-        );
-      }).whereType<_ApplicabilityDecision>().toList();
-      final classifiedNumbers = classified.map((decision) => decision.rule.ruleNumber).toSet();
-      classified.addAll(
-        rules
-            .where((rule) => !classifiedNumbers.contains(rule.ruleNumber))
-            .map((rule) => _ApplicabilityDecision(
-                  rule: rule,
-                  status: RuleApplicability.cannotDetermine,
-                )),
-      );
-      return classified;
-    } catch (_) {
-      return rules
-          .map((r) => _ApplicabilityDecision(
-                rule: r,
-                status: RuleApplicability.cannotDetermine,
-              ))
-          .toList();
+    } catch (e) {
+      debugPrint('Embedding generation failed: $e');
     }
+
+    return const [];
   }
-
-  String _buildApplicabilityPrompt(String ocrText, List<LegalRule> rules) {
-    final ruleText = rules.map((rule) => '''Rule number: ${rule.ruleNumber}
-Title: ${rule.title}
-Category: ${rule.category}
-Content:
-${rule.content}''').join('\n\n');
-    return '''Determine whether each legal rule is applicable to this inspected packaged product based only on the OCR/product information.
-
-Use exactly one status for every rule:
-- applicable: the rule clearly governs this package or a declaration that can be assessed for it.
-- not_applicable: the rule clearly concerns a different commodity, package type, or circumstance.
-- cannot_determine: available OCR/image information is insufficient to decide.
-
-Never call a rule applicable merely because its topic is generally related. Return JSON only:
-{"decisions":[{"rule_number":"...","status":"applicable|not_applicable|cannot_determine"}]}
-
-OCR/product information:
-$ocrText
-
-Retrieved legal rules:
-$ruleText''';
-  }
-
-  String _buildQuery(String ocrText) => '''Determine which Legal Metrology (Packaged Commodities) Rules, 2011 provisions are relevant to this packaged-product label and its declarations. Pay particular attention to manufacturer, packer, importer, net quantity, MRP, dates, consumer-care details, unit sale price, and missing declarations.
-
-Product label OCR:
-${ocrText.trim()}''';
-
-  Future<List<double>> _generateQueryEmbedding(String query) async {
-    if (apiKey.trim().isEmpty) {
-      throw const LegalRulesRetrievalException('GEMINI_API_KEY is not configured.');
-    }
-    final response = await _httpClient.post(
-      Uri.https(
-        'generativelanguage.googleapis.com',
-        '/v1beta/models/$model:embedContent',
-        {'key': apiKey},
-      ),
-      headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'content': {'parts': [{'text': query}]},
-        'taskType': 'RETRIEVAL_QUERY',
-      }),
-    );
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw LegalRulesRetrievalException(
-        'Gemini embedding request failed with status ${response.statusCode}: ${response.body}',
-      );
-    }
-    final values = jsonDecode(response.body)['embedding']?['values'];
-    if (values is! List || values.length != vectorDimension) {
-      throw LegalRulesRetrievalException(
-        'Expected $vectorDimension embedding values, received ${values is List ? values.length : 'none'}.',
-      );
-    }
-    return values.map<double>((value) => (value as num).toDouble()).toList();
-  }
-
-  void dispose() => _httpClient.close();
-}
-
-class LegalRulesRetrievalException implements Exception {
-  const LegalRulesRetrievalException(this.message);
-  final String message;
-  @override
-  String toString() => message;
 }
 
 class LegalRulesContext {
-  const LegalRulesContext({required this.applicable, required this.cannotDetermine});
-  const LegalRulesContext.empty()
-      : applicable = const [],
-        cannotDetermine = const [];
+  const LegalRulesContext({this.rules = const []});
 
-  final List<LegalRule> applicable;
-  final List<LegalRule> cannotDetermine;
+  const LegalRulesContext.empty() : rules = const [];
 
-  String get formatted {
-    final sections = <String>[];
-    for (final rule in applicable) {
-      sections.add(rule.format('APPLICABLE'));
-    }
-    for (final rule in cannotDetermine) {
-      sections.add(rule.format('APPLICABILITY UNCERTAIN'));
-    }
-    return sections.join('\n\n');
+  final List<LegalRuleItem> rules;
+
+  bool get isEmpty => rules.isEmpty;
+
+  String get formatted => toPromptContext();
+
+  String toPromptContext() {
+    if (rules.isEmpty) return 'No matched legal rules available.';
+    return rules
+        .map(
+          (rule) =>
+              'Rule ID: ${rule.id}\n'
+              'Source: ${rule.source}\n'
+              'Rule: ${rule.ruleTitle}\n'
+              'Category: ${rule.category}\n'
+              'Summary: ${rule.ruleSummary}\n'
+              'Exact Text: ${rule.exactText}\n'
+              'Similarity: ${rule.similarity.toStringAsFixed(3)}',
+        )
+        .join('\n\n');
   }
 }
 
-class LegalRule {
-  const LegalRule({required this.ruleNumber, required this.title, required this.category, required this.content});
+class LegalRuleItem {
+  const LegalRuleItem({
+    required this.id,
+    required this.source,
+    required this.ruleTitle,
+    required this.category,
+    required this.ruleSummary,
+    required this.exactText,
+    required this.similarity,
+  });
 
-  factory LegalRule.fromJson(Map<String, dynamic> json) => LegalRule(
-        ruleNumber: json['rule_number']?.toString() ?? 'unknown',
-        title: json['title']?.toString() ?? 'Untitled rule',
-        category: json['category']?.toString() ?? 'uncategorized',
-        content: json['content']?.toString() ?? '',
-      );
+  factory LegalRuleItem.fromRpcMap(Map<String, dynamic> map) {
+    return LegalRuleItem(
+      id: map['id']?.toString() ?? '',
+      source: map['source'] as String? ?? 'PCR, 2011',
+      ruleTitle: map['rule_title'] as String? ?? 'General Declaration Rule',
+      category: map['category'] as String? ?? 'General',
+      ruleSummary: map['rule_summary'] as String? ?? '',
+      exactText: map['exact_text'] as String? ?? '',
+      similarity: (map['similarity'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
 
-  final String ruleNumber;
-  final String title;
+  final String id;
+  final String source;
+  final String ruleTitle;
   final String category;
-  final String content;
-
-  String format(String status) => '''Rule number: $ruleNumber
-Title: $title
-Category: $category
-Applicability: $status
-Content:
-$content''';
-}
-
-enum RuleApplicability {
-  applicable,
-  notApplicable,
-  cannotDetermine;
-
-  static RuleApplicability fromValue(String? value) {
-    switch (value) {
-      case 'applicable':
-        return applicable;
-      case 'not_applicable':
-        return notApplicable;
-      default:
-        return cannotDetermine;
-    }
-  }
-}
-
-class _ApplicabilityDecision {
-  const _ApplicabilityDecision({required this.rule, required this.status});
-  final LegalRule rule;
-  final RuleApplicability status;
+  final String ruleSummary;
+  final String exactText;
+  final double similarity;
 }

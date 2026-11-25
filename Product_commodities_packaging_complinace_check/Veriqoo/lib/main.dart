@@ -22,19 +22,16 @@ Future<void> main() async {
   const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
   const supabaseKey = String.fromEnvironment('SUPABASE_KEY');
 
-  try {
-    if (supabaseUrl.isNotEmpty && supabaseKey.isNotEmpty) {
+  if (supabaseUrl.isNotEmpty && supabaseKey.isNotEmpty) {
+    try {
       await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseKey);
+      SupabaseService.isReady = true;
       debugPrint('Supabase initialized with custom credentials.');
-    } else {
-      await Supabase.initialize(
-        url: 'https://placeholder.supabase.co',
-        publishableKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy',
-      );
-      debugPrint('Supabase initialized in offline mode.');
+    } catch (e) {
+      debugPrint('Supabase initialization error: ');
     }
-  } catch (e) {
-    debugPrint('Supabase initialization error: $e');
+  } else {
+    debugPrint('Supabase credentials not provided; running in local offline mode.');
   }
 
   runApp(const LegalCheckApp());

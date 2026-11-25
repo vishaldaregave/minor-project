@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'supabase_service.dart';
 
 /// Exception thrown when Authority API request fails.
 class AuthorityApiException implements Exception {
@@ -234,6 +235,7 @@ class AuthorityApiService {
     if (provider != null) {
       return provider();
     }
+    if (!SupabaseService.isReady) return null;
     try {
       return Supabase.instance.client.auth.currentSession?.accessToken;
     } catch (_) {
@@ -429,3 +431,4 @@ class AuthorityApiService {
     _handleErrorResponse(response);
   }
 }
+

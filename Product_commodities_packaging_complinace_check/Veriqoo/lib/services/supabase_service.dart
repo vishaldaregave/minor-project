@@ -5,16 +5,18 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'compliance_analysis.dart';
 
 class SupabaseService {
+  static bool isReady = false;
+
   SupabaseService({SupabaseClient? client})
     : _client = client ?? _resolveClient();
 
   static SupabaseClient? _resolveClient() {
+    if (!isReady) return null;
     try {
-      if (Supabase.instance.isInitialized) {
-        return Supabase.instance.client;
-      }
-    } catch (_) {}
-    return null;
+      return Supabase.instance.client;
+    } catch (_) {
+      return null;
+    }
   }
 
   final SupabaseClient? _client;
@@ -49,71 +51,69 @@ class SupabaseService {
           imageUrl ??
           (primaryImage == null
               ? null
-              : await uploadInspectionImage(primaryImage));
+              : await uploadPackagedProductImage(primaryImage));
 
-      await _client.from('inspections').insert({
+      final status = analysis.isCompliant ? 'compliant' : 'non-compliant';
+      final score = analysis.isCompliant
+          ? 100
+          : (100 - (analysis.possibleIssues.length * 15 + analysis.missingInformation.length * 10))
+              .clamp(0, 100);
+      final summary = analysis.isCompliant
+          ? 'Compliant product packaged commodity'
+          : 'Found ${analysis.possibleIssues.length} issues and ${analysis.missingInformation.length} missing declarations';
+
+      final payload = {
         'product_name': analysis.productName,
-        'mrp': analysis.mrp,
-        'net_quantity': analysis.netQuantity,
-        'manufacturer': analysis.manufacturer,
-        'address': analysis.address,
-        'packing_date': analysis.packingDate,
-        'customer_care': analysis.customerCare,
-        'missing_information': analysis.missingInformation,
-        'possible_issues': analysis.possibleIssues
-            .map((issue) => issue.toJson())
-            .toList(),
-        'is_compliant': analysis.isCompliant,
+        'compliance_status': status,
+        'compliance_score': score,
+        'summary': summary,
         'ocr_text': ocrText,
-        'ai_report': analysis.toJson(),
-        'inspected_at': (inspectedAt ?? DateTime.now()).toUtc().toIso8601String(),
         'image_url': accessibleImageUrl,
-      });
+        'issues_found': analysis.possibleIssues
+            .map(
+              (issue) => {
+                'field': issue.title,
+                'status': issue.severity,
+                'issue': issue.description,
+                'recommendation': issue.legalBasis ?? '',
+                'legal_rule_ids': issue.ruleNumbers,
+                'verification_status': issue.verificationStatus.value,
+                'legal_basis': issue.legalBasis,
+                'ocr_evidence': issue.ocrEvidence,
+              },
+            )
+            .toList(),
+        'inspected_at': (inspectedAt ?? DateTime.now().toUtc())
+            .toIso8601String(),
+      };
+
+      await _client.from('inspections').insert(payload);
     } catch (e) {
-      debugPrint('Error saving inspection report to Supabase: $e');
+      debugPrint('Failed to save inspection report to Supabase: $e');
     }
   }
 
-  Future<String> uploadInspectionImage(XFile image) async {
-    if (_client == null) {
-      return '';
-    }
+  Future<String?> uploadPackagedProductImage(XFile image) async {
+    if (_client == null) return null;
     try {
-      const bucketName = 'inspection-images';
       final bytes = await image.readAsBytes();
-      final extension = _fileExtension(image.name);
-      final path = '${DateTime.now().toUtc().microsecondsSinceEpoch}.$extension';
+      final extension = image.name.split('.').last;
+      final path =
+          'inspections/${DateTime.now().millisecondsSinceEpoch}_${image.name}';
 
-      await _client.storage
-          .from(bucketName)
-          .uploadBinary(
+      await _client.storage.from('packaged_products').uploadBinary(
             path,
             bytes,
-            fileOptions: FileOptions(contentType: _mimeType(extension)),
+            fileOptions: FileOptions(
+              contentType: 'image/$extension',
+              upsert: true,
+            ),
           );
 
-      return _client.storage.from(bucketName).getPublicUrl(path);
+      return _client.storage.from('packaged_products').getPublicUrl(path);
     } catch (e) {
-      debugPrint('Error uploading inspection image to Supabase: $e');
-      return '';
-    }
-  }
-
-  String _fileExtension(String filename) {
-    final parts = filename.split('.');
-    return parts.length > 1 ? parts.last.toLowerCase() : 'jpg';
-  }
-
-  String _mimeType(String extension) {
-    switch (extension) {
-      case 'png':
-        return 'image/png';
-      case 'webp':
-        return 'image/webp';
-      case 'jpeg':
-      case 'jpg':
-      default:
-        return 'image/jpeg';
+      debugPrint('Error uploading image to Supabase Storage: $e');
+      return null;
     }
   }
 }
