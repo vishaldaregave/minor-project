@@ -1,3 +1,4 @@
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -16,6 +17,7 @@ class _FoodSafetyScreenState extends State<FoodSafetyScreen> {
   final _apiService = FoodSafetyApiService();
   final _textController = TextEditingController();
   final _imagePicker = ImagePicker();
+  final _textRecognizer = TextRecognizer();
 
   bool _isLoading = false;
   String? _errorMessage;
@@ -25,6 +27,7 @@ class _FoodSafetyScreenState extends State<FoodSafetyScreen> {
   @override
   void dispose() {
     _textController.dispose();
+    _textRecognizer.close();
     super.dispose();
   }
 
@@ -68,7 +71,24 @@ class _FoodSafetyScreenState extends State<FoodSafetyScreen> {
         _errorMessage = null;
       });
 
-      final res = await _apiService.analyseImage(bytes, filename: picked.name);
+      // Extract label text using on-device ML Kit OCR
+      String ocrText = '';
+      try {
+        final inputImage = InputImage.fromFilePath(picked.path);
+        final recognized = await _textRecognizer.processImage(inputImage);
+        ocrText = recognized.text.trim();
+        if (ocrText.isNotEmpty) {
+          _textController.text = ocrText;
+        }
+      } catch (ocrErr) {
+        debugPrint('On-device OCR error: $ocrErr');
+      }
+
+      final res = await _apiService.analyseImage(
+        bytes,
+        filename: picked.name,
+        extractedOcrText: ocrText,
+      );
       setState(() {
         _result = res;
         _isLoading = false;
@@ -178,40 +198,61 @@ class _FoodSafetyScreenState extends State<FoodSafetyScreen> {
                       Row(
                         children: [
                           Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _isLoading ? null : () => _pickAndAnalyseImage(ImageSource.camera),
-                              icon: const Icon(Icons.camera_alt_outlined, size: 18),
-                              label: const Text('Camera'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: const Color(0xFF183B32),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            child: SizedBox(
+                              height: 48,
+                              child: OutlinedButton.icon(
+                                onPressed: _isLoading ? null : () => _pickAndAnalyseImage(ImageSource.camera),
+                                icon: const Icon(Icons.camera_alt_rounded, size: 18),
+                                label: const Text('Take Photo', style: TextStyle(fontWeight: FontWeight.w600)),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFF183B32),
+                                  side: const BorderSide(color: Color(0xFF183B32), width: 1.2),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
                               ),
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 10),
                           Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _isLoading ? null : () => _pickAndAnalyseImage(ImageSource.gallery),
-                              icon: const Icon(Icons.photo_library_outlined, size: 18),
-                              label: const Text('Upload'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: const Color(0xFF183B32),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            child: SizedBox(
+                              height: 48,
+                              child: OutlinedButton.icon(
+                                onPressed: _isLoading ? null : () => _pickAndAnalyseImage(ImageSource.gallery),
+                                icon: const Icon(Icons.photo_library_outlined, size: 18),
+                                label: const Text('Upload Photo', style: TextStyle(fontWeight: FontWeight.w600)),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFF183B32),
+                                  side: const BorderSide(color: Color(0xFF183B32), width: 1.2),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
                               ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          ElevatedButton.icon(
-                            onPressed: _isLoading ? null : _analyseText,
-                            icon: const Icon(Icons.analytics_outlined, size: 18),
-                            label: const Text('Analyse'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF183B32),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: ElevatedButton.icon(
+                          onPressed: _isLoading ? null : _analyseText,
+                          icon: _isLoading
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Icon(Icons.biotech_rounded, size: 20),
+                          label: Text(
+                            _isLoading ? 'Analyzing Food Safety...' : 'Analyse Ingredients & EFSA Additives',
+                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF183B32),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
                       ),
                     ],
                   ),
