@@ -1582,16 +1582,16 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
 
-  Future<void> captureImage() async {
+  Future<void> captureImage({ImageSource source = ImageSource.camera}) async {
     try {
       final XFile? image = await _picker.pickImage(
-        source: ImageSource.camera,
+        source: source,
         preferredCameraDevice: CameraDevice.rear,
         imageQuality: 85,
       );
 
       if (image == null) {
-        print('CAMERA CANCELLED');
+        debugPrint('IMAGE PICKER CANCELLED');
         return;
       }
 
@@ -1604,15 +1604,15 @@ class _ScanScreenState extends State<ScanScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Image captured. Capture the next image.'),
+            content: Text('Image captured. You can capture more angles or tap Analyze.'),
             behavior: SnackBarBehavior.floating,
           ),
         );
       }
 
-      print('IMAGE CAPTURED: ${image.path}');
+      debugPrint('IMAGE CAPTURED: ${image.path}');
     } catch (e) {
-      print('CAMERA ERROR: $e');
+      debugPrint('IMAGE CAPTURE ERROR: $e');
     }
   }
 
@@ -1629,113 +1629,162 @@ class _ScanScreenState extends State<ScanScreen> {
     final previewImage = _capturedImages.isEmpty ? null : _capturedImages.last;
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF7F7F3),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFFF7F7F3),
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        leading: Navigator.of(context).canPop()
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF17201D)),
+                onPressed: () => Navigator.of(context).pop(),
+              )
+            : null,
+        title: const Text(
+          'Product Inspection',
+          style: TextStyle(
+            color: Color(0xFF17201D),
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 30),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Capture product images',
+                'Capture Product Labels',
                 style: TextStyle(
-                  fontSize: 26,
+                  fontSize: 24,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFF17201D),
                 ),
               ),
-              const SizedBox(height: 18),
-              Expanded(
-                child: Container(
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF202522),
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: previewImage != null
-                      ? FutureBuilder<Uint8List>(
-                          future: previewImage.readAsBytes(),
-                          builder: (context, snapshot) {
-                            if (!snapshot.hasData) {
-                              return const Center(
-                                child: CircularProgressIndicator(),
-                              );
-                            }
-                            return Image.memory(
-                              snapshot.data!,
-                              fit: BoxFit.cover,
-                              width: double.infinity,
-                              height: double.infinity,
-                            );
-                          },
-                        )
-                      : Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Container(
-                              height: 76,
-                              width: 76,
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.08),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.camera_alt_outlined,
-                                color: Colors.white,
-                                size: 38,
-                              ),
-                            ),
-                            const SizedBox(height: 18),
-                            const Text(
-                              'Ready for the next image',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 17,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 7),
-                            const Text(
-                              'Position the product inside the frame',
-                              style: TextStyle(
-                                color: Color(0xFFB7BFBB),
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
-                        ),
+              const SizedBox(height: 6),
+              const Text(
+                'Take photos of declarations: MRP, Net Qty, Dates, Address, Customer Care.',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF68716D),
+                  height: 1.4,
                 ),
               ),
-              const SizedBox(height: 18),
-              if (_capturedImages.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: Text(
-                    'Images captured: ${_capturedImages.length}',
-                    style: const TextStyle(
-                      color: Color(0xFF183B32),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
+              const SizedBox(height: 16),
+
+              // CAMERA / PREVIEW CONTAINER
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(12),
+                height: 250,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF5F6F5),
-                  borderRadius: BorderRadius.circular(12),
+                  color: const Color(0xFF202522),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: previewImage != null
+                    ? FutureBuilder<Uint8List>(
+                        future: previewImage.readAsBytes(),
+                        builder: (context, snapshot) {
+                          if (!snapshot.hasData) {
+                            return const Center(
+                              child: CircularProgressIndicator(),
+                            );
+                          }
+                          return Image.memory(
+                            snapshot.data!,
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            height: double.infinity,
+                          );
+                        },
+                      )
+                    : Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            height: 68,
+                            width: 68,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.08),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.camera_alt_outlined,
+                              color: Colors.white,
+                              size: 34,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          const Text(
+                            'Ready for product image',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Position package label clearly inside the frame',
+                            style: TextStyle(
+                              color: Color(0xFFB7BFBB),
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+
+              const SizedBox(height: 14),
+
+              if (_capturedImages.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check_circle_outline_rounded, size: 16, color: Color(0xFF183B32)),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Images captured: ${_capturedImages.length}',
+                        style: const TextStyle(
+                          color: Color(0xFF183B32),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              // OCR RESULT CARD
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0F2F1),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFE0E3E1)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'OCR result',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF183B32),
-                        letterSpacing: 0.5,
-                      ),
+                    const Row(
+                      children: [
+                        Icon(Icons.text_snippet_outlined, size: 16, color: Color(0xFF183B32)),
+                        SizedBox(width: 6),
+                        Text(
+                          'OCR Extracted Text',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF183B32),
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 8),
                     if (_isProcessingOcr)
@@ -1747,7 +1796,7 @@ class _ScanScreenState extends State<ScanScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           ),
                           SizedBox(width: 8),
-                          Text('Reading product text...'),
+                          Text('Reading product label text...'),
                         ],
                       )
                     else
@@ -1759,7 +1808,7 @@ class _ScanScreenState extends State<ScanScreen> {
                             style: const TextStyle(
                               fontSize: 13,
                               color: Color(0xFF2F3633),
-                              height: 1.5,
+                              height: 1.45,
                             ),
                           ),
                         ),
@@ -1767,10 +1816,63 @@ class _ScanScreenState extends State<ScanScreen> {
                   ],
                 ),
               ),
+
               const SizedBox(height: 16),
+
+              // CAPTURE / PICK BUTTONS ROW
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        onPressed: () => captureImage(source: ImageSource.camera),
+                        icon: const Icon(Icons.camera_alt_rounded, size: 20),
+                        label: const Text(
+                          'Camera',
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF183B32),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: SizedBox(
+                      height: 50,
+                      child: OutlinedButton.icon(
+                        onPressed: () => captureImage(source: ImageSource.gallery),
+                        icon: const Icon(Icons.photo_library_outlined, size: 20),
+                        label: const Text(
+                          'Gallery',
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF183B32),
+                          side: const BorderSide(color: Color(0xFF183B32), width: 1.5),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 12),
+
+              // ANALYZE BUTTON
               SizedBox(
                 width: double.infinity,
-                height: 54,
+                height: 52,
                 child: ElevatedButton.icon(
                   onPressed:
                       (!_isAnalyzing &&
@@ -1791,36 +1893,17 @@ class _ScanScreenState extends State<ScanScreen> {
                         )
                       : const Icon(Icons.smart_toy_outlined),
                   label: Text(
-                    _isAnalyzing ? 'Analyzing product...' : 'Analyze Product',
+                    _isAnalyzing ? 'Analyzing Declarations...' : 'Analyze Product Compliance',
                     style: const TextStyle(
-                      fontSize: 16,
+                      fontSize: 15,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF183B32),
                     foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                height: 54,
-                child: ElevatedButton.icon(
-                  onPressed: captureImage,
-                  icon: const Icon(Icons.camera_alt_rounded),
-                  label: const Text(
-                    'Capture Next Image',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF183B32),
-                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: const Color(0xFF183B32).withValues(alpha: 0.35),
+                    disabledForegroundColor: Colors.white.withValues(alpha: 0.7),
                     elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
