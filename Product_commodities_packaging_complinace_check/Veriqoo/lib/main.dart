@@ -22,14 +22,19 @@ Future<void> main() async {
   const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
   const supabaseKey = String.fromEnvironment('SUPABASE_KEY');
 
-  if (supabaseUrl.isNotEmpty && supabaseKey.isNotEmpty) {
-    try {
+  try {
+    if (supabaseUrl.isNotEmpty && supabaseKey.isNotEmpty) {
       await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseKey);
-    } catch (e) {
-      debugPrint('Supabase initialization error: $e');
+      debugPrint('Supabase initialized with custom credentials.');
+    } else {
+      await Supabase.initialize(
+        url: 'https://placeholder.supabase.co',
+        publishableKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy',
+      );
+      debugPrint('Supabase initialized in offline mode.');
     }
-  } else {
-    debugPrint('Supabase credentials not supplied via --dart-define. Running in local mode.');
+  } catch (e) {
+    debugPrint('Supabase initialization error: $e');
   }
 
   runApp(const LegalCheckApp());
@@ -104,6 +109,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
         actions: [
           IconButton(
+            onPressed: () {
+              setState(() {
+                selectedIndex = 3;
+              });
+            },
+            tooltip: 'Authority Dashboard',
+            icon: const Icon(
+              Icons.dashboard_customize_outlined,
+              color: Color(0xFF17201D),
+            ),
+          ),
+          IconButton(
             onPressed: () {},
             icon: const Icon(
               Icons.notifications_none_rounded,
@@ -140,14 +157,19 @@ class _HomeScreenState extends State<HomeScreen> {
             label: 'Scan',
           ),
           NavigationDestination(
+            icon: Icon(Icons.biotech_outlined),
+            selectedIcon: Icon(Icons.biotech_rounded),
+            label: 'Food Safety',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.dashboard_outlined),
+            selectedIcon: Icon(Icons.dashboard_rounded),
+            label: 'Dashboard',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.history_rounded),
             selectedIcon: Icon(Icons.history_rounded),
             label: 'History',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline_rounded),
-            selectedIcon: Icon(Icons.person_rounded),
-            label: 'Profile',
           ),
         ],
       ),
@@ -159,9 +181,11 @@ class _HomeScreenState extends State<HomeScreen> {
       case 1:
         return const ScanScreen();
       case 2:
-        return const RecordsScreen(title: 'Inspection History');
+        return const FoodSafetyScreen();
       case 3:
-        return const ProfileScreen();
+        return const DashboardScreen();
+      case 4:
+        return const RecordsScreen(title: 'Inspection History');
       default:
         return _buildHome();
     }
@@ -378,6 +402,102 @@ class _HomeScreenState extends State<HomeScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF00C896),
                         foregroundColor: const Color(0xFF0D251F),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // AUTHORITY COMPLIANCE DASHBOARD CARD
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E293B),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFF6251EF).withValues(alpha: 0.35)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        height: 42,
+                        width: 42,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF6251EF).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.analytics_outlined,
+                          color: Color(0xFF818CF8),
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Authority Dashboard',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Text(
+                              'Enforcement, Analytics & Registry',
+                              style: TextStyle(
+                                color: Color(0xFF818CF8),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Monitor packaging compliance rates, view violation trends, inspect registered commodities and manage enforcement cases.',
+                    style: TextStyle(
+                      color: Color(0xFFCBD5E1),
+                      fontSize: 13,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 46,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          selectedIndex = 3;
+                        });
+                      },
+                      icon: const Icon(Icons.dashboard_rounded, size: 18),
+                      label: const Text(
+                        'Open Authority Dashboard',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF6251EF),
+                        foregroundColor: Colors.white,
                         elevation: 0,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),

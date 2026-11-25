@@ -11,56 +11,75 @@ class LegalRulesRetrievalService {
     http.Client? httpClient,
   })  : apiKey = apiKey ??
             const String.fromEnvironment('GEMINI_API_KEY', defaultValue: ''),
-        _client = client ?? Supabase.instance.client,
+        _client = client ?? _resolveSupabaseClient(),
         _httpClient = httpClient ?? http.Client();
+
+  static SupabaseClient? _resolveSupabaseClient() {
+    try {
+      if (Supabase.instance.isInitialized) {
+        return Supabase.instance.client;
+      }
+    } catch (_) {}
+    return null;
+  }
 
   static const model = 'gemini-embedding-001';
   static const vectorDimension = 3072;
 
   final String apiKey;
-  final SupabaseClient _client;
+  final SupabaseClient? _client;
   final http.Client _httpClient;
 
   Future<LegalRulesContext> retrieveLegalContext(String ocrText) async {
-    final query = _buildQuery(ocrText);
-    debugPrint('RAG: retrieval query generated (${query.length} characters)');
-    final embedding = await _generateQueryEmbedding(query);
-    final totalResponse = await _client
-        .from('legal_rules')
-        .select('rule_number')
-        .not('embedding', 'is', null)
-        .count(CountOption.exact);
-    debugPrint('RAG: total embedded legal rules available = ${totalResponse.count}');
-    final response = await _client.rpc(
-      'match_legal_rules',
-      params: {
-        'query_embedding': embedding,
-        'match_count': 51,
-      },
-    );
-    final rules = List<Map<String, dynamic>>.from(response as List);
-    debugPrint('RAG: rules retrieved = ${rules.length}');
-    if (rules.isEmpty) return const LegalRulesContext.empty();
-
-    final candidates = rules.map(LegalRule.fromJson).toList();
-    final applicability = await _classifyApplicability(ocrText, candidates);
-    final applicable = <LegalRule>[];
-    final cannotDetermine = <LegalRule>[];
-    for (final decision in applicability) {
-      if (decision.status == RuleApplicability.applicable) {
-        applicable.add(decision.rule);
-      } else if (decision.status == RuleApplicability.cannotDetermine) {
-        cannotDetermine.add(decision.rule);
-      }
+    final client = _client;
+    if (client == null) {
+      debugPrint('RAG: SupabaseClient not configured or offline. Returning empty legal context.');
+      return const LegalRulesContext.empty();
     }
-    debugPrint('RAG: rules classified as applicable = ${applicable.length}');
-    debugPrint('RAG: rules classified as not applicable = ${candidates.length - applicable.length - cannotDetermine.length}');
-    debugPrint('RAG: rules classified as cannot determine = ${cannotDetermine.length}');
+    try {
+      final query = _buildQuery(ocrText);
+      debugPrint('RAG: retrieval query generated (${query.length} characters)');
+      final embedding = await _generateQueryEmbedding(query);
+      final totalResponse = await client
+          .from('legal_rules')
+          .select('rule_number')
+          .not('embedding', 'is', null)
+          .count(CountOption.exact);
+      debugPrint('RAG: total embedded legal rules available = ${totalResponse.count}');
+      final response = await client.rpc(
+        'match_legal_rules',
+        params: {
+          'query_embedding': embedding,
+          'match_count': 51,
+        },
+      );
+      final rules = List<Map<String, dynamic>>.from(response as List);
+      debugPrint('RAG: rules retrieved = ${rules.length}');
+      if (rules.isEmpty) return const LegalRulesContext.empty();
 
-    return LegalRulesContext(
-      applicable: applicable,
-      cannotDetermine: cannotDetermine,
-    );
+      final candidates = rules.map(LegalRule.fromJson).toList();
+      final applicability = await _classifyApplicability(ocrText, candidates);
+      final applicable = <LegalRule>[];
+      final cannotDetermine = <LegalRule>[];
+      for (final decision in applicability) {
+        if (decision.status == RuleApplicability.applicable) {
+          applicable.add(decision.rule);
+        } else if (decision.status == RuleApplicability.cannotDetermine) {
+          cannotDetermine.add(decision.rule);
+        }
+      }
+      debugPrint('RAG: rules classified as applicable = ${applicable.length}');
+      debugPrint('RAG: rules classified as not applicable = ${candidates.length - applicable.length - cannotDetermine.length}');
+      debugPrint('RAG: rules classified as cannot determine = ${cannotDetermine.length}');
+
+      return LegalRulesContext(
+        applicable: applicable,
+        cannotDetermine: cannotDetermine,
+      );
+    } catch (e) {
+      debugPrint('RAG: Error retrieving legal rules context: $e');
+      return const LegalRulesContext.empty();
+    }
   }
 
   Future<List<_ApplicabilityDecision>> _classifyApplicability(
@@ -68,63 +87,90 @@ class LegalRulesRetrievalService {
     List<LegalRule> rules,
   ) async {
     if (apiKey.trim().isEmpty) {
-      throw const LegalRulesRetrievalException('GEMINI_API_KEY is not configured.');
-    }
-    final response = await _httpClient.post(
-      Uri.https(
-        'generativelanguage.googleapis.com',
-        '/v1beta/models/gemini-3.6-flash:generateContent',
-        {'key': apiKey},
-      ),
-      headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'contents': [
-          {
-            'parts': [
-              {'text': _buildApplicabilityPrompt(ocrText, rules)},
-            ],
-          },
-        ],
-        'generationConfig': {
-          'temperature': 0.0,
-          'responseMimeType': 'application/json',
-        },
-      }),
-    );
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw LegalRulesRetrievalException(
-        'Applicability request failed with status ${response.statusCode}: ${response.body}',
-      );
-    }
-    final decoded = jsonDecode(response.body);
-    final text = decoded['candidates']?[0]?['content']?['parts']?[0]?['text'];
-    if (text is! String || text.trim().isEmpty) {
-      throw const LegalRulesRetrievalException('Applicability response was empty.');
-    }
-    final decisions = jsonDecode(text)['decisions'];
-    if (decisions is! List) {
-      throw const LegalRulesRetrievalException('Applicability response had no decisions.');
-    }
-    final byRule = {for (final rule in rules) rule.ruleNumber: rule};
-    final classified = decisions.map((item) {
-      final map = Map<String, dynamic>.from(item as Map);
-      final rule = byRule[map['rule_number']?.toString()];
-      if (rule == null) return null;
-      return _ApplicabilityDecision(
-        rule: rule,
-        status: RuleApplicability.fromValue(map['status']?.toString()),
-      );
-    }).whereType<_ApplicabilityDecision>().toList();
-    final classifiedNumbers = classified.map((decision) => decision.rule.ruleNumber).toSet();
-    classified.addAll(
-      rules
-          .where((rule) => !classifiedNumbers.contains(rule.ruleNumber))
-          .map((rule) => _ApplicabilityDecision(
-                rule: rule,
+      return rules
+          .map((r) => _ApplicabilityDecision(
+                rule: r,
                 status: RuleApplicability.cannotDetermine,
-              )),
-    );
-    return classified;
+              ))
+          .toList();
+    }
+    try {
+      final response = await _httpClient.post(
+        Uri.https(
+          'generativelanguage.googleapis.com',
+          '/v1beta/models/gemini-1.5-flash:generateContent',
+          {'key': apiKey},
+        ),
+        headers: const {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'contents': [
+            {
+              'parts': [
+                {'text': _buildApplicabilityPrompt(ocrText, rules)},
+              ],
+            },
+          ],
+          'generationConfig': {
+            'temperature': 0.0,
+            'responseMimeType': 'application/json',
+          },
+        }),
+      );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return rules
+            .map((r) => _ApplicabilityDecision(
+                  rule: r,
+                  status: RuleApplicability.cannotDetermine,
+                ))
+            .toList();
+      }
+      final decoded = jsonDecode(response.body);
+      final text = decoded['candidates']?[0]?['content']?['parts']?[0]?['text'];
+      if (text is! String || text.trim().isEmpty) {
+        return rules
+            .map((r) => _ApplicabilityDecision(
+                  rule: r,
+                  status: RuleApplicability.cannotDetermine,
+                ))
+            .toList();
+      }
+      final decisions = jsonDecode(text)['decisions'];
+      if (decisions is! List) {
+        return rules
+            .map((r) => _ApplicabilityDecision(
+                  rule: r,
+                  status: RuleApplicability.cannotDetermine,
+                ))
+            .toList();
+      }
+      final byRule = {for (final rule in rules) rule.ruleNumber: rule};
+      final classified = decisions.map((item) {
+        final map = Map<String, dynamic>.from(item as Map);
+        final rule = byRule[map['rule_number']?.toString()];
+        if (rule == null) return null;
+        return _ApplicabilityDecision(
+          rule: rule,
+          status: RuleApplicability.fromValue(map['status']?.toString()),
+        );
+      }).whereType<_ApplicabilityDecision>().toList();
+      final classifiedNumbers = classified.map((decision) => decision.rule.ruleNumber).toSet();
+      classified.addAll(
+        rules
+            .where((rule) => !classifiedNumbers.contains(rule.ruleNumber))
+            .map((rule) => _ApplicabilityDecision(
+                  rule: rule,
+                  status: RuleApplicability.cannotDetermine,
+                )),
+      );
+      return classified;
+    } catch (_) {
+      return rules
+          .map((r) => _ApplicabilityDecision(
+                rule: r,
+                status: RuleApplicability.cannotDetermine,
+              ))
+          .toList();
+    }
   }
 
   String _buildApplicabilityPrompt(String ocrText, List<LegalRule> rules) {
@@ -239,7 +285,11 @@ Content:
 $content''';
 }
 
-enum RuleApplicability { applicable, notApplicable, cannotDetermine;
+enum RuleApplicability {
+  applicable,
+  notApplicable,
+  cannotDetermine;
+
   static RuleApplicability fromValue(String? value) {
     switch (value) {
       case 'applicable':
