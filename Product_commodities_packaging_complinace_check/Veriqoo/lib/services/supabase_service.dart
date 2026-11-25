@@ -5,11 +5,14 @@ import 'compliance_analysis.dart';
 
 class SupabaseService {
   SupabaseService({SupabaseClient? client})
-    : _client = client ?? Supabase.instance.client;
+    : _client = client ?? (Supabase.instance.isInitialized ? Supabase.instance.client : null);
 
-  final SupabaseClient _client;
+  final SupabaseClient? _client;
+
+  bool get isConfigured => _client != null;
 
   Future<void> testConnection() async {
+    if (_client == null) return;
     await _client.from('supabase_test').insert({
       'message': 'Supabase connection test',
       'created_at': DateTime.now().toUtc().toIso8601String(),
@@ -23,6 +26,9 @@ class SupabaseService {
     String? imageUrl,
     DateTime? inspectedAt,
   }) async {
+    if (_client == null) {
+      throw StateError('Supabase is not configured. Set SUPABASE_URL and SUPABASE_KEY to enable remote persistence.');
+    }
     final accessibleImageUrl =
         imageUrl ??
         (primaryImage == null
@@ -50,6 +56,9 @@ class SupabaseService {
   }
 
   Future<String> uploadInspectionImage(XFile image) async {
+    if (_client == null) {
+      throw StateError('Supabase storage not configured.');
+    }
     const bucketName = 'inspection-images';
     final bytes = await image.readAsBytes();
     final extension = _fileExtension(image.name);
@@ -60,28 +69,25 @@ class SupabaseService {
         .uploadBinary(
           path,
           bytes,
-          fileOptions: FileOptions(
-            contentType: _contentType(extension),
-            upsert: false,
-          ),
+          fileOptions: FileOptions(contentType: _mimeType(extension)),
         );
 
     return _client.storage.from(bucketName).getPublicUrl(path);
   }
 
-  String _fileExtension(String fileName) {
-    final dot = fileName.lastIndexOf('.');
-    if (dot < 0 || dot == fileName.length - 1) return 'jpg';
-    final extension = fileName.substring(dot + 1).toLowerCase();
-    return RegExp(r'^[a-z0-9]+$').hasMatch(extension) ? extension : 'jpg';
+  String _fileExtension(String filename) {
+    final parts = filename.split('.');
+    return parts.length > 1 ? parts.last.toLowerCase() : 'jpg';
   }
 
-  String _contentType(String extension) {
+  String _mimeType(String extension) {
     switch (extension) {
       case 'png':
         return 'image/png';
       case 'webp':
         return 'image/webp';
+      case 'jpeg':
+      case 'jpg':
       default:
         return 'image/jpeg';
     }

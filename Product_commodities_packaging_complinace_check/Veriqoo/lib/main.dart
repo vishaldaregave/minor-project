@@ -22,14 +22,15 @@ Future<void> main() async {
   const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
   const supabaseKey = String.fromEnvironment('SUPABASE_KEY');
 
-  if (supabaseUrl.isEmpty || supabaseKey.isEmpty) {
-    throw StateError(
-      'Supabase is not configured. Pass SUPABASE_URL and SUPABASE_KEY '
-      'with --dart-define.',
-    );
+  if (supabaseUrl.isNotEmpty && supabaseKey.isNotEmpty) {
+    try {
+      await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseKey);
+    } catch (e) {
+      debugPrint('Supabase initialization error: $e');
+    }
+  } else {
+    debugPrint('Supabase credentials not supplied via --dart-define. Running in local mode.');
   }
-
-  await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseKey);
 
   runApp(const LegalCheckApp());
 }
